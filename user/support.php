@@ -18,8 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $message = trim($_POST['message']);
 
     if (!empty($subject) && !empty($message)) {
-        $stmt = $pdo->prepare("INSERT INTO support (user_id, subject, message, created_at) VALUES (?, ?, ?, NOW())");
-        if ($stmt->execute([$user_id, $subject, $message])) {
+        $stmt = $pdo->prepare("INSERT INTO support (user_id, message, created_at) VALUES (?, ?, NOW())");
+$stmt->execute([$user_id, $message]);
+
+        if ($stmt->execute([$user_id, $message])) {
             $success = "Your message was submitted successfully.";
         } else {
             $error = "Failed to send message.";
@@ -140,7 +142,6 @@ $messages = $fetch->fetchAll(PDO::FETCH_ASSOC);
     <?php if (count($messages) > 0): ?>
         <?php foreach ($messages as $msg): ?>
             <div class="message-box">
-                <p><strong><?= htmlspecialchars($msg['subject']) ?></strong></p>
                 <p><?= nl2br(htmlspecialchars($msg['message'])) ?></p>
                 <small><em>Submitted: <?= htmlspecialchars($msg['created_at']) ?></em></small>
 

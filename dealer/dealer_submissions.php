@@ -7,17 +7,16 @@ if (!isset($_SESSION['dealer_id'])) {
     exit();
 }
 
-$dealer_id = $_SESSION['dealer_id'];
-
+// Fetch all unassigned vehicle submissions by users
 $stmt = $pdo->prepare("
     SELECT t.*, u.name AS user_name, u.phone, u.email, v.make, v.model, v.year, v.image
     FROM trades t
     JOIN vehicles v ON t.vehicle_id = v.id
     JOIN users u ON t.user_id = u.id
-    WHERE v.dealer_id = ?
+    WHERE v.status = 'Pending' AND v.dealer_id IS NULL
     ORDER BY t.submission_date DESC
 ");
-$stmt->execute([$dealer_id]);
+$stmt->execute();
 $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
@@ -100,7 +99,7 @@ $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
       margin-top: 20px;
     }
 
-    /* Sidebar quick style */
+    /* Sidebar */
     nav {
       width: 220px;
       position: fixed;
@@ -152,8 +151,9 @@ $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
   </ul>
 </nav>
 
+<!-- Main Content -->
 <div class="container">
-  <h2>Vehicle Submissions</h2>
+  <h2>Available Vehicle Submissions</h2>
 
   <?php if (count($submissions) > 0): ?>
     <table>
@@ -190,12 +190,9 @@ $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
       </tbody>
     </table>
   <?php else: ?>
-    <div class="no-data">No vehicle submissions yet.</div>
+    <div class="no-data">No unassigned vehicle submissions available for review.</div>
   <?php endif; ?>
 </div>
 
-<script>
-  // Placeholder for possible interactivity
-</script>
 </body>
 </html>

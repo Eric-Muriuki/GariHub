@@ -9,20 +9,23 @@ if (!isset($_SESSION['dealer_id'])) {
 
 $dealer_id = $_SESSION['dealer_id'];
 $message = "";
+$selected_trade_id = $_POST['trade_id'] ?? ($_GET['trade_id'] ?? null);
 
-// Fetch vehicles that belong to this dealer and are sold
+// Fetch accepted offers made by this dealer
 $stmt = $pdo->prepare("
-    SELECT t.id AS trade_id, v.id AS vehicle_id, v.make, v.model, v.year, u.name AS buyer
-    FROM trades t
+    SELECT o.trade_id, v.make, v.model, v.year, u.name AS buyer
+    FROM offers o
+    JOIN trades t ON o.trade_id = t.id
     JOIN vehicles v ON t.vehicle_id = v.id
     JOIN users u ON t.user_id = u.id
-    WHERE v.dealer_id = ? AND t.status = 'Approved'
+    WHERE o.dealer_id = ? AND o.status = 'Accepted'
     ORDER BY t.submission_date DESC
 ");
 $stmt->execute([$dealer_id]);
-$trades = $stmt->fetchAll();
+$accepted_offers = $stmt->fetchAll();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Handle file upload
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['release'])) {
     $trade_id = $_POST['trade_id'];
     $release_file = $_FILES['release']['name'];
 
@@ -34,7 +37,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $filePath = $targetDir . "release_doc_" . $trade_id . ".pdf";
 
     if (move_uploaded_file($_FILES['release']['tmp_name'], $filePath)) {
-        // Log upload
         $log = $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context) VALUES ('dealer', ?, 'Uploaded Release Document', ?)");
         $context = "Uploaded release for Trade ID: $trade_id";
         $log->execute([$dealer_id, $context]);
@@ -43,7 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $message = "❌ Failed to upload the document.";
     }
+
+    $selected_trade_id = $trade_id; // Show viewer
 }
+
+// Check if release doc exists
+$releasePath = $selected_trade_id ? "../uploads/releases/release_doc_{$selected_trade_id}.pdf" : null;
+$docExists = $releasePath && file_exists($releasePath);
 ?>
 
 <!DOCTYPE html>
@@ -106,6 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       padding: 20px;
       border-radius: 8px;
       max-width: 600px;
+      margin-bottom: 30px;
     }
 
     select, input[type="file"], button {
@@ -139,6 +148,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       background: #ffe0e0;
       border-left: 5px solid red;
     }
+
+    .pdf-viewer {
+      margin-top: 30px;
+    }
+
+    iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
   </style>
 </head>
 <body>
@@ -158,30 +178,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </nav>
 
 <div class="container">
-  <h2>Upload Release Document</h2>
+  <h2>Upload / View Release Document</h2>
 
   <div class="form-box">
     <form method="POST" enctype="multipart/form-data">
-      <label>Select Trade:</label>
-      <select name="trade_id" required>
-        <option value="">-- Choose a Completed Trade --</option>
-        <?php foreach ($trades as $t): ?>
-          <option value="<?= $t['trade_id'] ?>">
-            <?= htmlspecialchars($t['make']) . " " . htmlspecialchars($t['model']) . " (" . $t['year'] . ") - Buyer: " . htmlspecialchars($t['buyer']) ?>
+      <label>Select Accepted Offer:</label>
+      <select name="trade_id" onchange="this.form.submit()" required>
+        <option value="">-- Choose Accepted Offer --</option>
+        <?php foreach ($accepted_offers as $offer): ?>
+          <option value="<?= $offer['trade_id'] ?>" <?= $selected_trade_id == $offer['trade_id'] ? 'selected' : '' ?>>
+            <?= htmlspecialchars($offer['make']) . " " . htmlspecialchars($offer['model']) . " (" . $offer['year'] . ") - Buyer: " . htmlspecialchars($offer['buyer']) ?>
           </option>
         <?php endforeach; ?>
       </select>
 
-      <label>Upload Release Document (PDF Only):</label>
-      <input type="file" name="release" accept=".pdf" required>
-
-      <button type="submit">Upload</button>
+      <?php if ($selected_trade_id): ?>
+        <label>Upload New Release Document (PDF Only):</label>
+        <input type="file" name="release" accept=".pdf">
+        <button type="submit">Upload / Replace Document</button>
+      <?php endif; ?>
     </form>
 
     <?php if (!empty($message)): ?>
       <div class="message"><?= htmlspecialchars($message) ?></div>
     <?php endif; ?>
   </div>
+
+  <?php if ($docExists): ?>
+    <div class="pdf-viewer">
+      <h3>Viewing Release Document</h3>
+      <iframe src="<?= $releasePath ?>"></iframe>
+    </div>
+  <?php elseif ($selected_trade_id): ?>
+    <p>No release document found for selected trade.</p>
+  <?php endif; ?>
 </div>
 
 </body>

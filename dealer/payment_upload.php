@@ -1,4 +1,4 @@
-<?php
+<?php 
 session_start();
 require_once '../includes/db.php';
 
@@ -9,27 +9,30 @@ if (!isset($_SESSION['dealer_id'])) {
 
 $dealer_id = $_SESSION['dealer_id'];
 $message = "";
+$selected_trade_id = $_POST['trade_id'] ?? ($_GET['trade_id'] ?? null);
 
-// Get approved trades for dealer's vehicles
+// Fetch accepted offers made by this dealer
 $stmt = $pdo->prepare("
-    SELECT t.id AS trade_id, v.make, v.model, v.year, u.name AS buyer
-    FROM trades t
+    SELECT o.trade_id, v.make, v.model, v.year, u.name AS buyer
+    FROM offers o
+    JOIN trades t ON o.trade_id = t.id
     JOIN vehicles v ON t.vehicle_id = v.id
     JOIN users u ON t.user_id = u.id
-    WHERE v.dealer_id = ? AND t.status = 'Approved'
+    WHERE o.dealer_id = ? AND o.status = 'Accepted'
     ORDER BY t.submission_date DESC
 ");
 $stmt->execute([$dealer_id]);
-$trades = $stmt->fetchAll();
+$offers = $stmt->fetchAll();
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+// Handle upload
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['payment'])) {
     $trade_id = $_POST['trade_id'];
     $file = $_FILES['payment']['name'];
     $ext = pathinfo($file, PATHINFO_EXTENSION);
     $allowed = ['pdf', 'jpg', 'jpeg', 'png'];
 
     if (!in_array(strtolower($ext), $allowed)) {
-        $message = "❌ Invalid file type. Only PDF, JPG, PNG allowed.";
+        $message = "❌ Invalid file type. Only PDF, JPG, JPEG, PNG allowed.";
     } else {
         $targetDir = "../uploads/payments/";
         if (!is_dir($targetDir)) {
@@ -47,6 +50,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $message = "✅ Payment proof uploaded successfully.";
         } else {
             $message = "❌ Failed to upload payment proof.";
+        }
+
+        $selected_trade_id = $trade_id;
+    }
+}
+
+// Check if payment file exists
+$paymentFile = null;
+if ($selected_trade_id) {
+    foreach (['pdf', 'jpg', 'jpeg', 'png'] as $ext) {
+        $testPath = "../uploads/payments/payment_proof_" . $selected_trade_id . "." . $ext;
+        if (file_exists($testPath)) {
+            $paymentFile = $testPath;
+            break;
         }
     }
 }
@@ -108,6 +125,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       padding: 20px;
       max-width: 600px;
       border-radius: 8px;
+      margin-bottom: 30px;
     }
 
     select, input[type="file"], button {
@@ -141,6 +159,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       background: #ffe0e0;
       border-left: 5px solid red;
     }
+
+    .viewer {
+      background: #fff;
+      padding: 20px;
+      border-radius: 8px;
+    }
+
+    iframe {
+      width: 100%;
+      height: 600px;
+      border: none;
+    }
+
+    img {
+      max-width: 100%;
+      border-radius: 8px;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
@@ -160,30 +196,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </nav>
 
 <div class="container">
-  <h2>Upload Payment Proof</h2>
+  <h2>Upload / View Payment Proof</h2>
 
   <div class="form-box">
     <form method="POST" enctype="multipart/form-data">
-      <label>Select Approved Trade:</label>
-      <select name="trade_id" required>
-        <option value="">-- Choose Trade --</option>
-        <?php foreach ($trades as $t): ?>
-          <option value="<?= $t['trade_id'] ?>">
-            <?= htmlspecialchars($t['make']) ?> <?= htmlspecialchars($t['model']) ?> (<?= $t['year'] ?>) - <?= htmlspecialchars($t['buyer']) ?>
+      <label>Select Accepted Offer:</label>
+      <select name="trade_id" onchange="this.form.submit()" required>
+        <option value="">-- Choose Offer --</option>
+        <?php foreach ($offers as $offer): ?>
+          <option value="<?= $offer['trade_id'] ?>" <?= $selected_trade_id == $offer['trade_id'] ? 'selected' : '' ?>>
+            <?= htmlspecialchars($offer['make']) ?> <?= htmlspecialchars($offer['model']) ?> (<?= $offer['year'] ?>) - <?= htmlspecialchars($offer['buyer']) ?>
           </option>
         <?php endforeach; ?>
       </select>
 
-      <label>Upload Payment Proof (PDF/JPG/PNG):</label>
-      <input type="file" name="payment" accept=".pdf,.jpg,.jpeg,.png" required>
-
-      <button type="submit">Upload</button>
+      <?php if ($selected_trade_id): ?>
+        <label>Upload Payment Proof (PDF/JPG/PNG):</label>
+        <input type="file" name="payment" accept=".pdf,.jpg,.jpeg,.png">
+        <button type="submit">Upload</button>
+      <?php endif; ?>
     </form>
 
     <?php if (!empty($message)): ?>
       <div class="message"><?= htmlspecialchars($message) ?></div>
     <?php endif; ?>
   </div>
+
+  <?php if ($paymentFile): ?>
+    <div class="viewer">
+      <h3>Viewing Uploaded Proof</h3>
+      <?php if (str_ends_with($paymentFile, '.pdf')): ?>
+        <iframe src="<?= $paymentFile ?>"></iframe>
+      <?php else: ?>
+        <img src="<?= $paymentFile ?>" alt="Payment Proof">
+      <?php endif; ?>
+    </div>
+  <?php elseif ($selected_trade_id): ?>
+    <p>No payment proof uploaded for this offer yet.</p>
+  <?php endif; ?>
 </div>
 
 </body>

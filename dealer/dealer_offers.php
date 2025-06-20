@@ -9,17 +9,18 @@ if (!isset($_SESSION['dealer_id'])) {
 
 $dealer_id = $_SESSION['dealer_id'];
 
-// Fetch offers made by this dealer (based on their vehicles)
+// Fetch offers submitted by this dealer
 $stmt = $pdo->prepare("
-    SELECT t.*, v.make, v.model, v.year, v.image, u.name AS user_name
-    FROM trades t
+    SELECT o.*, t.submission_date, v.make, v.model, v.year, v.image, u.name AS user_name
+    FROM offers o
+    JOIN trades t ON o.trade_id = t.id
     JOIN vehicles v ON t.vehicle_id = v.id
     JOIN users u ON t.user_id = u.id
-    WHERE v.dealer_id = ?
-    ORDER BY t.submission_date DESC
+    WHERE o.dealer_id = ?
+    ORDER BY o.created_at DESC
 ");
 $stmt->execute([$dealer_id]);
-$offers = $stmt->fetchAll();
+$offers = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -137,7 +138,7 @@ $offers = $stmt->fetchAll();
 
 <!-- Main -->
 <div class="container">
-  <h2>All Offers Made</h2>
+  <h2>Offers You've Made</h2>
 
   <?php if (count($offers) === 0): ?>
     <p>No offers have been submitted yet.</p>
@@ -146,11 +147,12 @@ $offers = $stmt->fetchAll();
       <thead>
         <tr>
           <th>Vehicle</th>
-          <th>Submitted By</th>
-          <th>Offer (KES)</th>
+          <th>Owner</th>
+          <th>Offer Price</th>
           <th>Status</th>
-          <th>Submission Date</th>
-          <th>Action</th>
+          <th>Trade Submitted</th>
+          <th>Your Offer Date</th>
+         
         </tr>
       </thead>
       <tbody>
@@ -161,16 +163,15 @@ $offers = $stmt->fetchAll();
               <br><?= htmlspecialchars($offer['make']) ?> <?= htmlspecialchars($offer['model']) ?> (<?= $offer['year'] ?>)
             </td>
             <td><?= htmlspecialchars($offer['user_name']) ?></td>
-            <td><?= number_format($offer['quoted_price']) ?></td>
+            <td>KES <?= number_format($offer['offer_price']) ?></td>
             <td>
               <span class="status-<?= strtolower($offer['status']) ?>">
                 <?= htmlspecialchars($offer['status']) ?>
               </span>
             </td>
             <td><?= htmlspecialchars($offer['submission_date']) ?></td>
-            <td>
-              <a href="submission_detail.php?id=<?= $offer['id'] ?>" class="btn">View</a>
-            </td>
+            <td><?= htmlspecialchars(date('Y-m-d H:i', strtotime($offer['created_at']))) ?></td>
+            
           </tr>
         <?php endforeach; ?>
       </tbody>

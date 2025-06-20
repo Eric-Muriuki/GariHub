@@ -22,7 +22,7 @@ $transactions = $pdo->prepare("SELECT COUNT(*) FROM transactions WHERE vehicle_i
 $transactions->execute([$dealer_id]);
 $total_transactions = $transactions->fetchColumn();
 
-$support = $pdo->prepare("SELECT COUNT(*) FROM support WHERE user_type = 'dealer' AND user_id = ? AND status = 'Open'");
+$support = $pdo->prepare("SELECT COUNT(*) FROM support WHERE id = ? AND status = 'Open'");
 $support->execute([$dealer_id]);
 $open_tickets = $support->fetchColumn();
 ?>

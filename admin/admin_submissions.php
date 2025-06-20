@@ -7,7 +7,6 @@ if (!isset($_SESSION['admin_id'])) {
     exit();
 }
 
-// Fetch all trade submissions
 $stmt = $pdo->prepare("
     SELECT trades.*, 
            vehicles.make, vehicles.model, vehicles.year, vehicles.image,
@@ -29,31 +28,67 @@ $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
   <style>
     body {
       font-family: Arial, sans-serif;
-      margin: 0; padding: 0;
+      margin: 0;
       background: #f5f5f5;
     }
 
-    .header {
+    .admin-sidebar {
+      width: 220px;
+      height: 100vh;
       background: #2D4F2B;
-      color: white;
+      position: fixed;
+      top: 0;
+      left: 0;
       padding: 20px;
-      text-align: center;
+      color: white;
     }
 
-    .container {
+    .admin-sidebar h2 {
+      text-align: center;
+      color: #FFF1CA;
+      margin-bottom: 30px;
+    }
+
+    .admin-sidebar ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .admin-sidebar li {
+      margin: 15px 0;
+    }
+
+    .admin-sidebar a {
+      color: white;
+      text-decoration: none;
+      font-weight: 500;
+      display: block;
+      padding: 8px;
+      border-radius: 4px;
+    }
+
+    .admin-sidebar a:hover {
+      background-color: #FFB823;
+      color: #2D4F2B;
+    }
+
+    .main {
+      margin-left: 240px;
       padding: 30px;
     }
 
-    h2 {
+    h1 {
       color: #2D4F2B;
-      text-align: center;
+      margin-bottom: 20px;
     }
 
     table {
       width: 100%;
       border-collapse: collapse;
       background: white;
-      margin-top: 20px;
+      margin-top: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
     }
 
     th, td {
@@ -93,12 +128,21 @@ $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </head>
 <body>
 
-<div class="header">
-  <h1>Admin Panel - Trade-in Submissions</h1>
+<div class="admin-sidebar">
+  <h2>🛠️ Admin Panel</h2>
+  <ul>
+    <li><a href="admin_dashboard.php">Dashboard</a></li>
+    <li><a href="admin_dealers.php">Manage Dealers</a></li>
+    <li><a href="admin_submissions.php">Vehicle Submissions</a></li>
+    <li><a href="admin_logs.php">Activity Logs</a></li>
+    <li><a href="admin_support.php">Support</a></li>
+    <li><a href="admin_reports.php">Reports</a></li>
+    <li><a href="../logout.php" style="color: #FFB823;">Logout</a></li>
+  </ul>
 </div>
 
-<div class="container">
-  <h2>All User Trade-ins</h2>
+<div class="main">
+  <h1>All User Trade-ins</h1>
 
   <?php if (count($submissions) > 0): ?>
     <table>
@@ -116,8 +160,7 @@ $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <?php foreach ($submissions as $s): ?>
         <tr>
           <td>
-            <img src="../uploads/<?= htmlspecialchars($s['image']) ?>" class="vehicle-img" alt="vehicle">
-            <br>
+            <img src="../uploads/<?= htmlspecialchars($s['image']) ?>" class="vehicle-img" alt="vehicle"><br>
             <?= htmlspecialchars($s['make']) . ' ' . htmlspecialchars($s['model']) ?> (<?= $s['year'] ?>)
           </td>
           <td><?= htmlspecialchars($s['user_name']) ?></td>

@@ -79,7 +79,7 @@ $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <td><?= $index + 1 ?></td>
             <td><?= htmlspecialchars($log['action']) ?></td>
             <td><?= htmlspecialchars($log['context']) ?></td>
-            <td><?= date('Y-m-d H:i:s', strtotime($log['created_at'])) ?></td>
+            <td><?= date('Y-m-d H:i:s', strtotime($log['timestamp'])) ?></td>
           </tr>
         <?php endforeach; ?>
       </tbody>

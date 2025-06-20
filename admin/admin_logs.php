@@ -175,7 +175,7 @@ $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
           <td data-label="Actor" class="actor"><?= ucfirst($log['actor_type']) ?> ID: <?= $log['actor_id'] ?></td>
           <td data-label="Action"><?= htmlspecialchars($log['action']) ?></td>
           <td data-label="Context"><?= htmlspecialchars($log['context']) ?></td>
-          <td data-label="Timestamp"><?= htmlspecialchars($log['created_at']) ?></td>
+          <td data-label="Timestamp"><?= htmlspecialchars($log['timestamp']) ?></td>
         </tr>
       <?php endforeach; ?>
     </tbody>

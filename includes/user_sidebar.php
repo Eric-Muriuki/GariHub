@@ -6,6 +6,7 @@
     <h2 class="sidebar-title">👤 My Account</h2>
     <ul class="sidebar-menu">
         <li><a href="dashboard.php">🏠 Dashboard</a></li>
+         <li><a href="submit_vehicle.php">📝 Submit Vehicle</a></li>
         <li><a href="trade.php">🚗 My Trades</a></li>
         <li><a href="transactions.php">💳 Transactions</a></li>
         <li><a href="submit_review.php">⭐ Submit Review</a></li>
