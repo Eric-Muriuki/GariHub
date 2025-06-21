@@ -37,22 +37,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['release'])) {
     $filePath = $targetDir . "release_doc_" . $trade_id . ".pdf";
 
     if (move_uploaded_file($_FILES['release']['tmp_name'], $filePath)) {
+        // Insert or update into releases table
+        $check = $pdo->prepare("SELECT * FROM releases WHERE trade_id = ?");
+        $check->execute([$trade_id]);
+
+        if ($check->rowCount()) {
+            $update = $pdo->prepare("UPDATE releases SET file_path = ?, uploaded_at = NOW() WHERE trade_id = ?");
+            $update->execute([$filePath, $trade_id]);
+        } else {
+            $insert = $pdo->prepare("INSERT INTO releases (trade_id, file_path) VALUES (?, ?)");
+            $insert->execute([$trade_id, $filePath]);
+        }
+
+        // Log action
         $log = $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context) VALUES ('dealer', ?, 'Uploaded Release Document', ?)");
-        $context = "Uploaded release for Trade ID: $trade_id";
-        $log->execute([$dealer_id, $context]);
+        $log->execute([$dealer_id, "Release document uploaded for Trade ID $trade_id"]);
 
         $message = "✅ Release document uploaded successfully.";
     } else {
         $message = "❌ Failed to upload the document.";
     }
 
-    $selected_trade_id = $trade_id; // Show viewer
+    $selected_trade_id = $trade_id;
 }
 
 // Check if release doc exists
 $releasePath = $selected_trade_id ? "../uploads/releases/release_doc_{$selected_trade_id}.pdf" : null;
 $docExists = $releasePath && file_exists($releasePath);
 ?>
+
 
 <!DOCTYPE html>
 <html>

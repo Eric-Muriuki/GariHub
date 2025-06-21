@@ -30,7 +30,7 @@ if ($_SERVER["REQUEST_METHOD"] === "POST") {
     <style>
         body { font-family: Arial; background: #f9f9f9; }
         .form-container { max-width: 400px; margin: 40px auto; padding: 20px; background: white; border-radius: 8px; box-shadow: 0 0 10px #ccc; }
-        input, button { width: 100%; padding: 10px; margin: 10px 0; }
+        input, button { width: 90%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 5px; }
         .btn { background: #2D4F2B; color: white; border: none; border-radius: 5px; }
         .error { color: red; }
     </style>

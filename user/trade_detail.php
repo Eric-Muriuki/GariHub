@@ -1,123 +1,226 @@
 <?php
 session_start();
 require_once '../includes/db.php';
-include '../includes/user_sidebar.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
 
-if (!isset($_GET['id'])) {
-    echo "Trade ID missing.";
-    exit();
-}
+include '../includes/user_sidebar.php';
 
-$trade_id = $_GET['id'];
 $user_id = $_SESSION['user_id'];
+$trade_id = $_GET['id'] ?? null;
 
-// Fetch trade and vehicle info
-$stmt = $pdo->prepare("
-    SELECT t.*, v.make, v.model, v.year, v.price, v.mileage, v.condition, v.image
-    FROM trades t
-    JOIN vehicles v ON t.vehicle_id = v.id
-    WHERE t.id = ? AND t.user_id = ?
-");
+// Validate trade ownership
+$stmt = $pdo->prepare("SELECT * FROM trades WHERE id = ? AND user_id = ?");
 $stmt->execute([$trade_id, $user_id]);
 $trade = $stmt->fetch();
 
 if (!$trade) {
-    echo "Trade not found or unauthorized.";
+    echo "<p style='padding:20px;'>Invalid trade or access denied.</p>";
     exit();
 }
 
-// Handle offer response
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['offer_id']) && isset($_POST['response'])) {
-    $offer_id = $_POST['offer_id'];
-    $response = $_POST['response'];
+// Handle offer acceptance
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['accept_offer_id'])) {
+    $offer_id = $_POST['accept_offer_id'];
 
-    if (in_array($response, ['Accepted', 'Rejected'])) {
-        $pdo->prepare("UPDATE offers SET status = ? WHERE id = ?")->execute([$response, $offer_id]);
+    $stmt = $pdo->prepare("SELECT trade_id FROM offers WHERE id = ? AND trade_id = ? AND status = 'Pending'");
+    $stmt->execute([$offer_id, $trade_id]);
+    $offer = $stmt->fetch();
+
+    if ($offer) {
+        $pdo->prepare("UPDATE offers SET status = 'Accepted' WHERE id = ?")->execute([$offer_id]);
+        $pdo->prepare("UPDATE offers SET status = 'Rejected' WHERE trade_id = ? AND id != ?")->execute([$trade_id, $offer_id]);
+        $pdo->prepare("UPDATE trades SET status = 'Approved' WHERE id = ?")->execute([$trade_id]);
+        $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context) VALUES ('user', ?, 'Accepted Offer', ?)")
+            ->execute([$user_id, "Accepted offer ID $offer_id for Trade ID $trade_id"]);
+
+        header("Location: trade_detail.php?id=$trade_id&accepted=1");
+        exit();
     }
 }
 
-// Fetch offers from dealers
-$offers = $pdo->prepare("
-    SELECT o.*, d.company_name AS dealer_name
-    FROM offers o
-    JOIN dealers d ON o.dealer_id = d.id
+// Handle offer rejection
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['reject_offer_id'])) {
+    $offer_id = $_POST['reject_offer_id'];
+
+    $stmt = $pdo->prepare("SELECT trade_id FROM offers WHERE id = ? AND trade_id = ? AND status = 'Pending'");
+    $stmt->execute([$offer_id, $trade_id]);
+    $offer = $stmt->fetch();
+
+    if ($offer) {
+        $pdo->prepare("UPDATE offers SET status = 'Rejected' WHERE id = ?")->execute([$offer_id]);
+        $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context) VALUES ('user', ?, 'Rejected Offer', ?)")
+            ->execute([$user_id, "Rejected offer ID $offer_id for Trade ID $trade_id"]);
+
+        header("Location: trade_detail.php?id=$trade_id&rejected=$offer_id");
+        exit();
+    }
+}
+
+// Fetch vehicle info
+$vehicleStmt = $pdo->prepare("SELECT v.* FROM vehicles v WHERE id = ?");
+$vehicleStmt->execute([$trade['vehicle_id']]);
+$vehicle = $vehicleStmt->fetch();
+
+// Fetch offers
+$offerStmt = $pdo->prepare("
+    SELECT o.*, d.company_name AS dealer_name 
+    FROM offers o 
+    JOIN dealers d ON o.dealer_id = d.id 
     WHERE o.trade_id = ?
     ORDER BY o.created_at DESC
 ");
-$offers->execute([$trade_id]);
-$dealer_offers = $offers->fetchAll(PDO::FETCH_ASSOC);
+$offerStmt->execute([$trade_id]);
+$offers = $offerStmt->fetchAll();
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Trade Detail | GariHub</title>
-  <style>
-    body { font-family: Arial, sans-serif; background: #f6f6f6; margin: 0; padding: 0; }
-    .main-content { margin-left: 240px; padding: 30px; }
-    .trade-card, .offer-card {
-      background: white; padding: 25px; border-radius: 8px;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1); margin-bottom: 30px;
-    }
-    .trade-card img { width: 100%; max-width: 300px; border-radius: 8px; }
-    .highlight { color: #2D4F2B; font-weight: bold; }
-    .status-box { padding: 6px 10px; background: #708A58; color: white; border-radius: 4px; font-size: 14px; }
-    .btn { padding: 8px 16px; background: #FFB823; color: #2D4F2B; text-decoration: none; border-radius: 4px; display: inline-block; margin-top: 15px; }
-    .doc-link { display: inline-block; background: #eee; padding: 5px 10px; border-radius: 4px; color: #2D4F2B; text-decoration: none; }
-    .offer-section h3 { color: #2D4F2B; }
-    form.offer-response { margin-top: 10px; }
-    form.offer-response button {
-      margin-right: 10px; padding: 6px 12px; border: none; cursor: pointer; border-radius: 4px;
-    }
-    .accept-btn { background: #2D4F2B; color: white; }
-    .reject-btn { background: #B22222; color: white; }
-  </style>
+    <meta charset="UTF-8">
+    <title>Trade Details | GariHub</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f5f5f5;
+        }
+
+        .main-content {
+            margin-left: 240px;
+            padding: 30px;
+        }
+
+        h2 {
+            color: #2D4F2B;
+        }
+
+        .vehicle-box {
+            background: #fff;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-radius: 8px;
+        }
+
+        .vehicle-box img {
+            width: 180px;
+            float: left;
+            margin-right: 20px;
+            border-radius: 5px;
+        }
+
+        .offers-table {
+            width: 100%;
+            background: #fff;
+            border-collapse: collapse;
+            box-shadow: 0 0 6px rgba(0,0,0,0.05);
+        }
+
+        .offers-table th, .offers-table td {
+            padding: 12px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+
+        .offers-table th {
+            background-color: #708A58;
+            color: white;
+        }
+
+        .btn {
+            padding: 6px 12px;
+            background: #2D4F2B;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            text-decoration: none;
+        }
+
+        .btn:hover {
+            background: #FFB823;
+            color: #2D4F2B;
+        }
+
+        .btn-reject {
+            background-color: #999;
+            margin-left: 5px;
+        }
+
+        .accepted {
+            background: #FFB823;
+            color: #2D4F2B;
+            padding: 6px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+
+        .rejected {
+            background: #ccc;
+            padding: 6px 10px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+    </style>
 </head>
 <body>
 
 <div class="main-content">
-  <h2>Trade Details</h2>
+    <h2>Trade Detail</h2>
 
-  <div class="trade-card">
-    <h3><?= htmlspecialchars($trade['make']) . ' ' . htmlspecialchars($trade['model']) ?> (<?= $trade['year'] ?>)</h3>
-    <img src="../uploads/<?= htmlspecialchars($trade['image']) ?>" alt="Vehicle Image">
-    <p><span class="highlight">Condition:</span> <?= htmlspecialchars($trade['condition']) ?></p>
-    <p><span class="highlight">Mileage:</span> <?= number_format($trade['mileage']) ?> km</p>
-    <p><span class="highlight">Quoted Price:</span> KES <?= number_format($trade['quoted_price']) ?></p>
-    <p><span class="highlight">Status:</span> <span class="status-box"><?= htmlspecialchars($trade['status']) ?></span></p>
-    <a href="trade.php" class="btn">← Back to My Trades</a>
-  </div>
+    <div class="vehicle-box">
+        <img src="../uploads/<?= htmlspecialchars($vehicle['image']) ?>" alt="Vehicle Image">
+        <h3><?= htmlspecialchars($vehicle['make']) . " " . htmlspecialchars($vehicle['model']) ?> (<?= $vehicle['year'] ?>)</h3>
+        <p>Status: <strong><?= htmlspecialchars($trade['status']) ?></strong></p>
+        <p>Submitted: <?= htmlspecialchars($trade['submission_date']) ?></p>
+    </div>
 
-  <div class="offer-section">
-    <h3>Dealer Offers</h3>
-
-    <?php if (count($dealer_offers) === 0): ?>
-      <p>No offers received yet.</p>
+    <h3>Offers from Dealers</h3>
+    <?php if (count($offers) === 0): ?>
+        <p>No offers submitted yet.</p>
     <?php else: ?>
-      <?php foreach ($dealer_offers as $offer): ?>
-        <div class="offer-card">
-          <p><strong>Dealer:</strong> <?= htmlspecialchars($offer['dealer_name']) ?></p>
-          <p><strong>Offer Price:</strong> KES <?= number_format($offer['offer_price']) ?></p>
-          <p><strong>Message:</strong> <?= htmlspecialchars($offer['offer_notes']) ?></p>
-          <p><strong>Status:</strong> <?= htmlspecialchars($offer['status']) ?></p>
-
-          <?php if ($offer['status'] === 'Pending'): ?>
-          <form method="POST" class="offer-response">
-            <input type="hidden" name="offer_id" value="<?= $offer['id'] ?>">
-            <button type="submit" name="response" value="Accepted" class="accept-btn">Accept</button>
-            <button type="submit" name="response" value="Rejected" class="reject-btn">Reject</button>
-          </form>
-          <?php endif; ?>
-        </div>
-      <?php endforeach; ?>
+        <table class="offers-table">
+            <thead>
+                <tr>
+                    <th>Dealer</th>
+                    <th>Offer (KES)</th>
+                    <th>Submitted</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ($offers as $offer): ?>
+                    <tr>
+                        <td><?= htmlspecialchars($offer['dealer_name']) ?></td>
+                        <td><?= number_format($offer['offer_price']) ?></td>
+                        <td><?= htmlspecialchars($offer['created_at']) ?></td>
+                        <td><?= htmlspecialchars($offer['status']) ?></td>
+                        <td>
+                            <?php if ($offer['status'] === 'Pending' && $trade['status'] !== 'Approved'): ?>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('Accept this offer?');">
+                                    <input type="hidden" name="accept_offer_id" value="<?= $offer['id'] ?>">
+                                    <button class="btn" type="submit">Accept Offer</button>
+                                </form>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('Reject this offer?');">
+                                    <input type="hidden" name="reject_offer_id" value="<?= $offer['id'] ?>">
+                                    <button class="btn btn-reject" type="submit">Reject Offer</button>
+                                </form>
+                            <?php elseif ($offer['status'] === 'Accepted'): ?>
+                                <span class="accepted">✔ Accepted</span>
+                            <?php else: ?>
+                                <span class="rejected">✖ Rejected</span>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
     <?php endif; ?>
-  </div>
 </div>
 
 </body>

@@ -42,23 +42,23 @@ $existing_offer = $offer_stmt->fetch();
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $offer_price = $_POST['offer_price'];
     $message = trim($_POST['message']);
-    $status = $_POST['status'];
 
     if ($existing_offer) {
         // Update existing offer
-        $update = $pdo->prepare("UPDATE offers SET offer_price = ?, message = ?, status = ? WHERE id = ?");
-        $update->execute([$offer_price, $message, $status, $existing_offer['id']]);
+        $update = $pdo->prepare("UPDATE offers SET offer_price = ?, offer_notes = ?, status = 'Pending' WHERE id = ?");
+        $update->execute([$offer_price, $message, $existing_offer['id']]);
         echo "<script>alert('Offer updated successfully.'); window.location.href='dealer_submissions.php';</script>";
         exit();
     } else {
         // Insert new offer
-        $insert = $pdo->prepare("INSERT INTO offers (trade_id, dealer_id, offer_price, offer_notes, status) VALUES (?, ?, ?, ?, ?)");
-        $insert->execute([$trade_id, $dealer_id, $offer_price, $message, $status]);
+        $insert = $pdo->prepare("INSERT INTO offers (trade_id, dealer_id, offer_price, offer_notes, status) VALUES (?, ?, ?, ?, 'Pending')");
+        $insert->execute([$trade_id, $dealer_id, $offer_price, $message]);
         echo "<script>alert('Offer submitted successfully.'); window.location.href='dealer_submissions.php';</script>";
         exit();
     }
 }
 ?>
+
 
 <!DOCTYPE html>
 <html>
@@ -144,12 +144,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       <label>Message to Owner (optional)</label>
       <textarea name="message" rows="3"><?= htmlspecialchars($existing_offer['message'] ?? '') ?></textarea>
 
-      <label>Status</label>
-      <select name="status" required>
-        <option value="Pending" <?= (isset($existing_offer['status']) && $existing_offer['status'] == 'Pending') ? 'selected' : '' ?>>Pending</option>
-        <option value="Approved" <?= (isset($existing_offer['status']) && $existing_offer['status'] == 'Approved') ? 'selected' : '' ?>>Approved</option>
-        <option value="Rejected" <?= (isset($existing_offer['status']) && $existing_offer['status'] == 'Rejected') ? 'selected' : '' ?>>Rejected</option>
-      </select>
+      <p>Note: Offers are subject to review and may take time to process.</p>
+      <p>Once you submit, the owner will be notified and can accept or reject your offer.</p>
 
       <button class="btn" type="submit"><?= $existing_offer ? 'Update Offer' : 'Submit Offer' ?></button>
     </form>

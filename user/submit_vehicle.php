@@ -9,46 +9,79 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 $user_id = $_SESSION['user_id'];
+$message = "";
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sanitize inputs
+    // Capture and sanitize input
     $make = $_POST['make'] === 'Other' ? trim($_POST['custom_make']) : $_POST['make'];
     $model = $_POST['model'] === 'Other' ? trim($_POST['custom_model']) : $_POST['model'];
     $year = intval($_POST['year']);
     $mileage = intval($_POST['mileage']);
     $quoted_price = floatval($_POST['quoted_price']);
-    $vehicle_condition = $_POST['vehicle_condition'];
+    $condition = $_POST['vehicle_condition'];
 
-    // Upload files
-    $image = $_FILES['image']['name'];
-    $document = $_FILES['documents']['name'];
-    $imagePath = "../uploads/" . basename($image);
-    $documentPath = "../uploads/" . basename($document);
+    // File uploads
+    $image = $_FILES['image'];
+    $document = $_FILES['documents'];
 
-    move_uploaded_file($_FILES['image']['tmp_name'], $imagePath);
-    move_uploaded_file($_FILES['documents']['tmp_name'], $documentPath);
+    $imageExt = strtolower(pathinfo($image['name'], PATHINFO_EXTENSION));
+    $docExt = strtolower(pathinfo($document['name'], PATHINFO_EXTENSION));
 
-    // Insert into vehicles table
-    $stmt = $pdo->prepare("INSERT INTO vehicles (make, model, year, mileage, image, status, owner_id, dealer_id, `condition`)
-                           VALUES (?, ?, ?, ?, ?, 'Pending', ?, NULL, ?)");
-    $stmt->execute([$make, $model, $year, $mileage, $image, $user_id, $vehicle_condition]);
+    $allowedImageExts = ['jpg', 'jpeg', 'png'];
+    $allowedDocExts = ['pdf', 'jpg', 'jpeg', 'png'];
 
-    $vehicle_id = $pdo->lastInsertId();
+    // Validate extensions
+    if (!in_array($imageExt, $allowedImageExts)) {
+        $message = "❌ Invalid image type. Only JPG, JPEG, PNG allowed.";
+    } elseif (!in_array($docExt, $allowedDocExts)) {
+        $message = "❌ Invalid document type. Only PDF, JPG, JPEG, PNG allowed.";
+    } elseif ($image['error'] !== UPLOAD_ERR_OK || $document['error'] !== UPLOAD_ERR_OK) {
+        $message = "❌ File upload error. Please try again.";
+    } else {
+        // Create upload folders if not exist
+        if (!is_dir('../uploads')) mkdir('../uploads', 0755, true);
+        if (!is_dir('../uploads/documents')) mkdir('../uploads/documents', 0755, true);
 
-    // Insert into trades table
-    $trade = $pdo->prepare("INSERT INTO trades (vehicle_id, user_id, status, submission_date, quoted_price)
-                            VALUES (?, ?, 'Pending', NOW(), ?)");
-    $trade->execute([$vehicle_id, $user_id, $quoted_price]);
+        // Unique file names
+        $imageName = 'vehicle_' . time() . '_' . basename($image['name']);
+        $documentName = 'doc_' . time() . '_' . basename($document['name']);
 
-    // Log the action
-    $log = $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context)
-                          VALUES ('user', ?, 'Submitted Vehicle for Trade', ?)");
-    $log->execute([$user_id, "Trade-in: $make $model ($year), Condition: $vehicle_condition"]);
+        $imagePath = '../uploads/' . $imageName;
+        $documentPath = '../uploads/documents/' . $documentName;
 
-    header("Location: trade.php");
-    exit();
+        move_uploaded_file($image['tmp_name'], $imagePath);
+        move_uploaded_file($document['tmp_name'], $documentPath);
+
+        // Insert into vehicles
+        $stmt = $pdo->prepare("INSERT INTO vehicles (make, model, year, mileage, image, status, owner_id, dealer_id, `condition`)
+                               VALUES (?, ?, ?, ?, ?, 'Pending', ?, NULL, ?)");
+        $stmt->execute([$make, $model, $year, $mileage, $imageName, $user_id, $condition]);
+
+        $vehicle_id = $pdo->lastInsertId();
+
+        // Insert into trades
+        $trade = $pdo->prepare("INSERT INTO trades (vehicle_id, user_id, status, submission_date, quoted_price)
+                                VALUES (?, ?, 'Pending', NOW(), ?)");
+        $trade->execute([$vehicle_id, $user_id, $quoted_price]);
+
+        // Insert into documents
+        $doc = $pdo->prepare("INSERT INTO documents (vehicle_id, document_type, file_path, uploaded_by, uploaded_at)
+                              VALUES (?, 'Ownership', ?, ?, NOW())");
+        $doc->execute([$vehicle_id, $documentName, $user_id]);
+
+        // Insert log
+        $log = $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context)
+                              VALUES ('user', ?, 'Submitted Vehicle for Trade', ?)");
+        $context = "Trade-in submitted: $make $model ($year), Condition: $condition";
+        $log->execute([$user_id, $context]);
+
+        header("Location: trade.php?success=1");
+        exit();
+    }
 }
 ?>
+
+<!-- HTML FORM SECTION -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -76,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       margin-top: 15px;
       font-weight: bold;
     }
-    input, select, textarea {
+    input, select {
       width: 100%;
       padding: 10px;
       margin-top: 5px;
@@ -98,12 +131,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     button:hover {
       background: #708A58;
     }
+    .error {
+      background: #ffe0e0;
+      padding: 10px;
+      margin-top: 10px;
+      border-left: 5px solid red;
+    }
   </style>
 </head>
 <body>
 
 <div class="container">
   <h2>Submit Your Vehicle for Trade-In</h2>
+
+  <?php if (!empty($message)): ?>
+    <div class="error"><?= htmlspecialchars($message) ?></div>
+  <?php endif; ?>
+
   <form method="POST" enctype="multipart/form-data">
     <label for="make">Vehicle Make:</label>
     <select name="make" id="make" required>
@@ -130,7 +174,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <label for="mileage">Mileage (KM):</label>
     <input type="number" name="mileage" required>
 
-    <label for="vehicle_condition">Vehicle Condition (Select):</label>
+    <label for="vehicle_condition">Vehicle Condition:</label>
     <select name="vehicle_condition" required>
       <option value="">-- Select Condition --</option>
       <option value="Excellent">Excellent</option>
@@ -146,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <input type="file" name="image" accept=".jpg,.jpeg,.png" required>
 
     <label for="documents">Upload Ownership Document:</label>
-    <input type="file" name="documents" accept=".pdf,.jpg,.png,.jpeg" required>
+    <input type="file" name="documents" accept=".pdf,.jpg,.jpeg,.png" required>
 
     <button type="submit">Submit Vehicle</button>
   </form>
@@ -158,7 +202,6 @@ const modelSelect = document.getElementById('model');
 const customMakeInput = document.getElementById('custom_make');
 const customModelInput = document.getElementById('custom_model');
 
-// Common makes and models
 const models = {
   Toyota: ['Axio', 'Fielder', 'Premio', 'Probox', 'Vitz'],
   Nissan: ['Note', 'X-Trail', 'Juke', 'Sylphy'],
@@ -169,24 +212,20 @@ const models = {
 };
 
 makeSelect.addEventListener('change', function () {
-  const selectedMake = this.value;
+  const selected = this.value;
   modelSelect.innerHTML = '<option value="">-- Select Model --</option>';
 
-  if (selectedMake === 'Other') {
+  if (selected === 'Other') {
     customMakeInput.classList.remove('hidden');
     customModelInput.classList.remove('hidden');
     modelSelect.classList.add('hidden');
   } else {
     customMakeInput.classList.add('hidden');
-    customModelInput.classList.add('hidden');
     modelSelect.classList.remove('hidden');
-
-    if (models[selectedMake]) {
-      models[selectedMake].forEach(model => {
-        const option = document.createElement('option');
-        option.value = model;
-        option.text = model;
-        modelSelect.appendChild(option);
+    customModelInput.classList.add('hidden');
+    if (models[selected]) {
+      models[selected].forEach(model => {
+        modelSelect.innerHTML += `<option value="${model}">${model}</option>`;
       });
       modelSelect.innerHTML += `<option value="Other">Other</option>`;
     }
@@ -204,4 +243,3 @@ modelSelect.addEventListener('change', function () {
 
 </body>
 </html>
-

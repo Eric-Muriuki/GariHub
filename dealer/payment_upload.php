@@ -1,4 +1,4 @@
-<?php 
+<?php
 session_start();
 require_once '../includes/db.php';
 
@@ -42,6 +42,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['payment'])) {
         $filePath = $targetDir . "payment_proof_" . $trade_id . "." . $ext;
 
         if (move_uploaded_file($_FILES['payment']['tmp_name'], $filePath)) {
+            // Save to DB (insert or update)
+            $check = $pdo->prepare("SELECT * FROM payments WHERE trade_id = ?");
+            $check->execute([$trade_id]);
+
+            if ($check->rowCount()) {
+                $update = $pdo->prepare("UPDATE payments SET file_path = ?, uploaded_at = NOW() WHERE trade_id = ?");
+                $update->execute([$filePath, $trade_id]);
+            } else {
+                $insert = $pdo->prepare("INSERT INTO payments (trade_id, file_path) VALUES (?, ?)");
+                $insert->execute([$trade_id, $filePath]);
+            }
+
             // Log action
             $log = $pdo->prepare("INSERT INTO logs (actor_type, actor_id, action, context) VALUES ('dealer', ?, 'Uploaded Payment Proof', ?)");
             $context = "Uploaded payment proof for Trade ID: $trade_id";
@@ -59,15 +71,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['payment'])) {
 // Check if payment file exists
 $paymentFile = null;
 if ($selected_trade_id) {
-    foreach (['pdf', 'jpg', 'jpeg', 'png'] as $ext) {
-        $testPath = "../uploads/payments/payment_proof_" . $selected_trade_id . "." . $ext;
-        if (file_exists($testPath)) {
-            $paymentFile = $testPath;
-            break;
-        }
+    $query = $pdo->prepare("SELECT file_path FROM payments WHERE trade_id = ?");
+    $query->execute([$selected_trade_id]);
+    $fileRow = $query->fetch();
+
+    if ($fileRow && file_exists($fileRow['file_path'])) {
+        $paymentFile = $fileRow['file_path'];
     }
 }
 ?>
+
 
 <!DOCTYPE html>
 <html>

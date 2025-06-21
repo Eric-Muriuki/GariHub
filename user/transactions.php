@@ -1,180 +1,149 @@
 <?php
 session_start();
 require_once '../includes/db.php';
-include '../includes/user_sidebar.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../login.php");
     exit();
 }
 
+include '../includes/user_sidebar.php';
 $user_id = $_SESSION['user_id'];
 
-// Fetch transactions for the user
+// Fetch approved trades with related vehicle info and proof documents
 $stmt = $pdo->prepare("
     SELECT 
-        t.id, t.amount, t.date, t.proof,
-        v.make, v.model, v.image,
-        tr.status AS trade_status
-    FROM transactions t
+        t.id AS trade_id, t.quoted_price, t.submission_date, t.status,
+        v.make, v.model, v.year, v.image,
+        r.file_path AS release_file,
+        p.file_path AS payment_file
+    FROM trades t
     JOIN vehicles v ON t.vehicle_id = v.id
-    LEFT JOIN trades tr ON tr.vehicle_id = v.id AND tr.user_id = t.user_id
-    WHERE t.user_id = ?
-    ORDER BY t.date DESC
+    LEFT JOIN releases r ON t.id = r.trade_id
+    LEFT JOIN payments p ON t.id = p.trade_id
+    WHERE t.user_id = ? AND t.status = 'Approved'
+    ORDER BY t.submission_date DESC
 ");
 $stmt->execute([$user_id]);
-$transactions = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$trades = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>My Transactions | GariHub</title>
+  <title>Approved Trades | GariHub</title>
   <style>
     body {
-      font-family: 'Segoe UI', sans-serif;
-      margin: 0;
-      padding: 0;
-      background: #f5f5f5;
+        font-family: 'Segoe UI', sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f5f5f5;
     }
 
     .main-content {
-      margin-left: 240px;
-      padding: 30px;
+        margin-left: 240px;
+        padding: 30px;
     }
 
     h2 {
-      color: #2D4F2B;
+        color: #2D4F2B;
+        margin-bottom: 20px;
     }
 
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      background: white;
-      border-radius: 8px;
-      overflow: hidden;
-      box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    .trade-card {
+        background: #fff;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        padding: 20px;
+        display: flex;
+        align-items: center;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
 
-    th, td {
-      padding: 12px;
-      border-bottom: 1px solid #eee;
-      text-align: left;
+    .trade-card img {
+        width: 150px;
+        border-radius: 6px;
+        margin-right: 20px;
     }
 
-    th {
-      background: #FFB823;
-      color: #2D4F2B;
+    .trade-details {
+        flex: 1;
     }
 
-    .vehicle-thumb {
-      width: 80px;
-      border-radius: 4px;
+    .trade-details h4 {
+        margin: 0;
+        color: #2D4F2B;
     }
 
     .btn {
-      padding: 6px 12px;
-      border: none;
-      background: #708A58;
-      color: white;
-      border-radius: 4px;
-      cursor: pointer;
-      text-decoration: none;
-      display: inline-block;
+        padding: 6px 12px;
+        margin-top: 10px;
+        margin-right: 10px;
+        background: #708A58;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        text-decoration: none;
+        cursor: pointer;
     }
 
-    .btn-outline {
-      background: transparent;
-      border: 1px solid #708A58;
-      color: #708A58;
+    .btn:hover {
+        background: #2D4F2B;
     }
 
-    input[type="file"] {
-      margin-top: 5px;
+    .btn.disabled {
+        background: #ccc;
+        cursor: not-allowed;
     }
 
-    .muted {
-      color: gray;
-      font-style: italic;
-    }
-
-    .form-inline {
-      display: flex;
-      flex-direction: column;
+    .no-trades {
+        background: #FFF1CA;
+        padding: 20px;
+        border-left: 5px solid #FFB823;
+        color: #2D4F2B;
+        margin-top: 20px;
     }
 
     @media (max-width: 768px) {
-      .main-content {
-        margin-left: 0;
-        padding: 20px;
-      }
-
-      table, thead, tbody, th, td, tr {
-        display: block;
-      }
-
-      td {
-        margin-bottom: 10px;
-      }
+        .main-content {
+            margin-left: 0;
+            padding: 15px;
+        }
     }
   </style>
 </head>
 <body>
 
 <div class="main-content">
-  <h2>My Transactions</h2>
+    <h2>Approved Trade-ins</h2>
 
-  <?php if (count($transactions) > 0): ?>
-    <table>
-      <thead>
-        <tr>
-          <th>Vehicle</th>
-          <th>Amount (KES)</th>
-          <th>Date</th>
-          <th>Proof</th>
-          <th>Status</th>
-          <th>Release Doc</th>
-        </tr>
-      </thead>
-      <tbody>
-        <?php foreach ($transactions as $t): ?>
-          <tr>
-            <td>
-              <img src="../uploads/<?= htmlspecialchars($t['image']) ?>" alt="Vehicle" class="vehicle-thumb">
-              <br><?= htmlspecialchars($t['make']) . ' ' . htmlspecialchars($t['model']) ?>
-            </td>
-            <td><?= number_format($t['amount'], 2) ?></td>
-            <td><?= htmlspecialchars($t['date']) ?></td>
-            <td>
-              <?php if ($t['proof']): ?>
-                <a href="../uploads/proofs/<?= htmlspecialchars($t['proof']) ?>" target="_blank" class="btn btn-sm">Download</a>
-              <?php else: ?>
-                <form action="upload_proof.php" method="post" enctype="multipart/form-data" class="form-inline">
-                  <input type="hidden" name="transaction_id" value="<?= $t['id'] ?>">
-                  <input type="file" name="proof" accept=".jpg,.jpeg,.png,.pdf" required>
-                  <button type="submit" class="btn btn-sm">Upload</button>
-                </form>
-              <?php endif; ?>
-            </td>
-            <td><?= htmlspecialchars($t['trade_status'] ?? 'Pending') ?></td>
-            <td>
-              <?php
-                $releaseDoc = "release_doc_{$t['id']}.pdf";
-                if (file_exists("../uploads/releases/$releaseDoc")):
-              ?>
-                <a href="../uploads/releases/<?= $releaseDoc ?>" target="_blank" class="btn btn-outline btn-sm">View</a>
-              <?php else: ?>
-                <span class="muted">Pending</span>
-              <?php endif; ?>
-            </td>
-          </tr>
+    <?php if (count($trades) === 0): ?>
+        <div class="no-trades">You have no approved trades yet.</div>
+    <?php else: ?>
+        <?php foreach ($trades as $trade): ?>
+            <div class="trade-card">
+                <img src="../uploads/<?= htmlspecialchars($trade['image']) ?>" alt="Vehicle Image">
+                <div class="trade-details">
+                    <h4><?= htmlspecialchars($trade['make']) ?> <?= htmlspecialchars($trade['model']) ?> (<?= $trade['year'] ?>)</h4>
+                    <p><strong>Quoted Price:</strong> KES <?= number_format($trade['quoted_price']) ?></p>
+                    <p><strong>Submitted On:</strong> <?= htmlspecialchars($trade['submission_date']) ?></p>
+
+                    <a class="btn <?= $trade['release_file'] ? '' : 'disabled' ?>" 
+                       href="<?= $trade['release_file'] ? '../uploads/' . htmlspecialchars($trade['release_file']) : '#' ?>" 
+                       target="_blank">
+                        View Release Proof
+                    </a>
+
+                    <a class="btn <?= $trade['payment_file'] ? '' : 'disabled' ?>" 
+                       href="<?= $trade['payment_file'] ? '../uploads/' . htmlspecialchars($trade['payment_file']) : '#' ?>" 
+                       target="_blank">
+                        View Payment Proof
+                    </a>
+                </div>
+            </div>
         <?php endforeach; ?>
-      </tbody>
-    </table>
-  <?php else: ?>
-    <p>You have no transactions yet.</p>
-  <?php endif; ?>
+    <?php endif; ?>
 </div>
 
 </body>
